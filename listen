@@ -2,8 +2,8 @@
 #
 # listen - listen on a TCP port, accept connection and do simple I/O
 #
-# @(#) $Revision: 1.5 $
-# @(#) $Id: listen,v 1.5 2000/05/28 20:46:27 chongo Exp chongo $
+# @(#) $Revision: 1.6 $
+# @(#) $Id: listen,v 1.6 2002/03/08 10:51:49 chongo Exp chongo $
 # @(#) $Source: /usr/local/src/cmd/listen/RCS/listen,v $
 #
 # Copyright (c) 2000 by Landon Curt Noll.  All Rights Reserved.
@@ -33,6 +33,7 @@
 # requirements
 #
 use strict;
+use bytes;
 use vars qw($opt_v $opt_d);
 use POSIX;
 use Getopt::Long;
@@ -48,7 +49,7 @@ $^W = $perl_warn;
 
 # my vars
 #
-my $version = '@(#) $Revision: 1.5 $';		# program version
+my $version = '@(#) $Revision: 1.6 $';		# program version
 
 # usage and help
 #
