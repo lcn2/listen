@@ -2,8 +2,8 @@
 #
 # listen - listen on a TCP port, accept connection and do simple I/O
 #
-# @(#) $Revision: 1.1 $
-# @(#) $Id: listen.pl,v 1.1 2000/05/07 10:21:03 chongo Exp chongo $
+# @(#) $Revision: 1.2 $
+# @(#) $Id: listen.pl,v 1.2 2000/05/07 13:25:01 chongo Exp chongo $
 # @(#) $Source: /home/chongo/bench/prefix/RCS/listen.pl,v $
 #
 # Copyright (c) 2000 by Landon Curt Noll.  All Rights Reserved.
@@ -48,7 +48,7 @@ $^W = $perl_warn;
 
 # my vars
 #
-my $version = '@(#) $Revision: 1.1 $';		# program version
+my $version = '@(#) $Revision: 1.2 $';		# program version
 
 # usage and help
 #
@@ -113,7 +113,7 @@ MAIN: {
 	&debug(1, "listening for a connection");
 	($client, $client_addr) = $server->accept();
 
-	# determine informatin about the new client
+	# determine information about the new client
 	#
 	($client_port, $client_ip) = sockaddr_in($client_addr);
 	$client_addrstr = inet_ntoa($client_ip);
@@ -368,7 +368,7 @@ sub process_client(*)
 		$client_buf .= $data;
 		$client_len += $data_len;
 
-	    # read the socket if neeeded
+	    # read the socket if needed
 	    #
 	    } else {
 
@@ -482,7 +482,7 @@ sub process_client(*)
 }
 
 
-# nonblock - put descriptor into non-blocking mode
+# non_block - put descriptor into non-blocking mode
 #
 # given:
 #	$io		socket or handle
@@ -492,7 +492,7 @@ sub non_block($)
     my $handle = shift;		# get arg
     my $flags;			# fcntl flags
 
-    # set posix non-blocking I/O
+    # set POSIX non-blocking I/O
     #
     $flags = fcntl($handle, F_GETFL, 0) or &error(20, "cannot get flags");
     $flags = fcntl($handle, F_SETFL, $flags | O_NONBLOCK) or 
