@@ -2,9 +2,9 @@
 #
 # listen - listen on a TCP port, accept connection and do simple I/O
 #
-# @(#) $Revision: 1.2 $
-# @(#) $Id: listen.pl,v 1.2 2000/05/07 13:25:01 chongo Exp chongo $
-# @(#) $Source: /home/chongo/bench/prefix/RCS/listen.pl,v $
+# @(#) $Revision: 1.3 $
+# @(#) $Id: listen,v 1.3 2000/05/07 13:27:08 chongo Exp chongo $
+# @(#) $Source: /usr/local/src/cmd/listen/RCS/listen,v $
 #
 # Copyright (c) 2000 by Landon Curt Noll.  All Rights Reserved.
 #
@@ -48,7 +48,7 @@ $^W = $perl_warn;
 
 # my vars
 #
-my $version = '@(#) $Revision: 1.2 $';		# program version
+my $version = '@(#) $Revision: 1.3 $';		# program version
 
 # usage and help
 #
@@ -89,7 +89,7 @@ MAIN: {
 	&error(1, "usage: $0 $usage");
     }
     if ($#ARGV != 0) {
-	&error(1, "usage: $0 $usage");
+	&error(2, "usage: $0 $usage");
     }
     $int_arg = $ARGV[0];
     &debug(1, "debug level: $opt_v");
@@ -182,16 +182,16 @@ sub debug($$)
     # firewall
     #
     if (!defined $min_lvl) {
-    	&error(2, "debug called without a minimum debug level");
+    	&error(3, "debug called without a minimum debug level");
     }
     if ($min_lvl =~ /\D/) {
-    	&error(3, "debug called with non-numeric debug level: $min_lvl");
+    	&error(4, "debug called with non-numeric debug level: $min_lvl");
     }
     if ($opt_v < $min_lvl) {
 	return;
     }
     if (!defined $msg) {
-    	&error(4, "debug called without a message");
+    	&error(5, "debug called without a message");
     }
 
     # issue the error message
@@ -235,7 +235,7 @@ sub listen_setup($)
 	# determine the IP address of the interface
 	#
 	$int_addr = gethostbyname($int_host) or
-	    &error(5, "interface name: $int_host is unknown");
+	    &error(6, "interface name: $int_host is unknown");
 	$int_addrstr = inet_ntoa($int_addr);
 	&debug(1, "listening only on interface: $int_host ($int_addrstr)");
 
@@ -252,7 +252,7 @@ sub listen_setup($)
     if ($port_arg !~ /^[0-9]+$/) {
 	(undef, undef, $port, undef) = getservbyname($port_arg, "tcp");
 	if (! defined($port)) {
-	    &error(6, "port name: $port is unknown");
+	    &error(7, "port name: $port is unknown");
 	}
     } else {
     	$port = $port_arg;
@@ -275,6 +275,9 @@ sub listen_setup($)
 					Type => SOCK_STREAM,
 					Listen => SOMAXCONN,
 					Reuse => 1);
+    }
+    if (! defined $listen) {
+    	&error(8, "unable created a listen queue to TCP/$port");
     }
     &debug(1, "listen queue created");
 
@@ -340,7 +343,7 @@ sub process_client(*)
 		#
 		$data_len = pack("L", 0);
 		if (!ioctl(STDIN, FIONREAD(), $data_len)) {
-		    &error(10, "cannot FIONREAD STDIN");
+		    &error(9, "cannot FIONREAD STDIN");
 		}
 		$data_len = unpack("L", $data_len);
 
@@ -356,7 +359,7 @@ sub process_client(*)
 		#
 		$rv = sysread(STDIN, $data, $data_len);
 		if (!defined($rv)) {
-		    &error(11, "read error on STDIN: $!");
+		    &error(10, "read error on STDIN: $!");
 		}
 		if ($rv != $data_len) {
 		    &error(11, "short read error on STDIN");
@@ -494,9 +497,9 @@ sub non_block($)
 
     # set POSIX non-blocking I/O
     #
-    $flags = fcntl($handle, F_GETFL, 0) or &error(20, "cannot get flags");
+    $flags = fcntl($handle, F_GETFL, 0) or &error(14, "cannot get flags");
     $flags = fcntl($handle, F_SETFL, $flags | O_NONBLOCK) or 
-        &error(21, "cannot set non-blocking flags");
+        &error(15, "cannot set non-blocking flags");
 
     # flush on writes
     #
