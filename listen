@@ -2,9 +2,9 @@
 #
 # listen - listen on a TCP port, accept connection and do simple I/O
 #
-# @(#) $Revision$
-# @(#) $Id$
-# @(#) $Source$
+# @(#) $Revision: 1.1 $
+# @(#) $Id: listen.pl,v 1.1 2000/05/07 10:21:03 chongo Exp chongo $
+# @(#) $Source: /home/chongo/bench/prefix/RCS/listen.pl,v $
 #
 # Copyright (c) 2000 by Landon Curt Noll.  All Rights Reserved.
 #
@@ -34,8 +34,17 @@
 #
 use strict;
 use vars qw($opt_v $opt_d);
+use POSIX;
 use Getopt::Long;
 use Socket;
+use IO::Select;
+use IO::Socket;
+use Fcntl;
+use Tie::RefHash;
+my $perl_warn = $^W;
+$^W = 0;
+require 'sys/ioctl.ph';
+$^W = $perl_warn;
 
 # my vars
 #
@@ -54,7 +63,7 @@ my $help = qq{Usage:
 	-v	verbose / debug mode
 };
 my %optctl = (
-    "v" => \$opt_v,	"d" => \$opt_d
+    "v+" => \$opt_v,	"d" => \$opt_d
 );
 
 
@@ -62,17 +71,13 @@ my %optctl = (
 #
 MAIN: {
     my $int_arg;		# [interface:]port arg
-    my $server;			# socket handle to listen on for clients
+    my $server;			# server listening socket
+    my $client;			# client socket
     my $client_port;		# client's port on their host
     my $client_addr;		# client remote socket address
     my $client_host;		# client hostname or IP address as .-ed string
     my $client_ip;		# client IP address
     my $client_addrstr;		# client IP address as .-ed string
-
-    # setup
-    #
-    select(STDOUT);
-    $| = 1;
 
     # set the defaults
     #
@@ -87,6 +92,13 @@ MAIN: {
 	&error(1, "usage: $0 $usage");
     }
     $int_arg = $ARGV[0];
+    &debug(1, "debug level: $opt_v");
+
+    # setup
+    #
+    select(STDOUT);
+    $| = 1;
+    &non_block(*STDOUT);
 
     # setup the server port
     #
@@ -99,25 +111,28 @@ MAIN: {
 	# accept the new connection
 	#
 	&debug(1, "listening for a connection");
-	$client_addr = accept(CLIENT, $server);
-	&debug(1, "accepted a new connection");
+	($client, $client_addr) = $server->accept();
 
 	# determine informatin about the new client
 	#
-&debug(2, "here 0");
 	($client_port, $client_ip) = sockaddr_in($client_addr);
-&debug(2, "here 1");
 	$client_addrstr = inet_ntoa($client_ip);
-&debug(2, "here 2");
 	if (!($client_host = gethostbyaddr($client_addr, AF_INET))) {
-&debug(2, "here 3");
 	    $client_host = $client_addrstr;
-&debug(2, "here 4");
 	}
 	&debug(1, "accepted connection from $client_host($client_port)");
 
-	exit(0);	# XXX
-    }
+	# process I/O from client as needed
+	#
+	&process_client($client);
+	&debug(2, "after call to process_client");
+
+    } while(defined $opt_d);
+
+    # all done
+    #
+    &debug(1, "not in daemon mode, exiting");
+    exit(0);
 }
 
 
@@ -196,12 +211,13 @@ sub debug($$)
 sub listen_setup($)
 {
     my $int_arg = $_[0];	# get arg
+    my $port_arg;		# port portion of the arg
     my $int_host;		# interface host name
     my $int_addr;		# interface IP address
     my $int_addrstr;		# interface IP address as a .-ed string
     my $sock_addr;		# listen socket addr
     my $port;			# TCP port to listen on
-    local *FH;			# listening file handle
+    my $listen;			# listening socket
 
     # determine the interface address or use INADDR_ANY
     #
@@ -211,7 +227,10 @@ sub listen_setup($)
 	#
 	$int_arg =~ /^(.*):([^:]*)$/;
 	$int_host = $1;
-	$int_arg = $2;
+	$port_arg = $2;
+	if (!defined($int_host) || $int_host =~ /^$/) {
+	    $int_host = "localhost";
+	}
 
 	# determine the IP address of the interface
 	#
@@ -224,39 +243,263 @@ sub listen_setup($)
 
 	# will listen on any interface
 	#
-	$int_host = "";
-	$int_addr = INADDR_ANY;
+	$port_arg = $int_arg;
 	&debug(1, "listening on any interface");
     }
 
     # determine the port number to listen on
     #
-    if ($int_arg !~ /^[0-9]+$/) {
-	(undef, undef, $port, undef) = getservbyname($int_arg, "tcp");
+    if ($port_arg !~ /^[0-9]+$/) {
+	(undef, undef, $port, undef) = getservbyname($port_arg, "tcp");
 	if (! defined($port)) {
 	    &error(6, "port name: $port is unknown");
 	}
-	&debug(1, "will listen on port: $int_arg ($port)");
     } else {
-	$port = $int_arg;
-	&debug(1, "will listen on port: $port");
+    	$port = $port_arg;
     }
+    &debug(1, "will listen on port: $port");
 
     # form a socket to listen on
     #
-    socket(FH, PF_INET, SOCK_STREAM, getprotobyname('tcp'));
-    setsockopt(FH, SOL_SOCKET, SO_REUSEADDR, 1);
+    &debug(2, "pre listen");
+    if (defined($int_addr)) {
+	$listen = IO::Socket::INET->new(LocalAddr => $int_addrstr,
+					LocalPort => $port,
+					Proto => "tcp",
+					Type => SOCK_STREAM,
+					Listen => SOMAXCONN,
+					Reuse => 1);
+    } else {
+	$listen = IO::Socket::INET->new(LocalPort => $port,
+					Proto => "tcp",
+					Type => SOCK_STREAM,
+					Listen => SOMAXCONN,
+					Reuse => 1);
+    }
+    &debug(1, "listen queue created");
 
-    # bind the socket to the [interface:]port
+    # return the socket
     #
-    $sock_addr = sockaddr_in($port, $int_addr);
-    bind(FH, $sock_addr) or &error(7, "cannot bind to $int_host:$port: $!");
+    return $listen;
+}
 
-    # establish a listening queue for new clients
-    #
-    listen(FH, SOMAXCONN) or &error(8, "cannot listen to $int_arg: $!");
 
-    # return the handle
+# process_client - process I/O to/from client from/to stdin/stdout
+#
+# given:
+#	CLIENT		client socket handle
+#
+sub process_client(*)
+{
+    my $client = $_[0];		# get client socket handle
+    my $rd_select;		# select() call object for reading
+    my $stdout_buf;		# STDOUT output buffer
+    my $stdout_len;		# STDOUT output buffer length
+    my $client_buf;		# client output buffer
+    my $client_len;		# client output buffer length
+
+    # set non-blocking I/O on client socket
     #
-    return *FH;
+    &non_block($client);
+
+    # build up the read select masks
+    #
+    $rd_select = IO::Select->new();
+    $rd_select->add($client);
+    $rd_select->add(*STDIN);
+
+    # clear buffers
+    #
+    $stdout_buf = '';
+    $stdout_len = 0;
+    $client_buf = '';
+    $client_len = 0;
+
+    # process until one of the select handles has an error or EOF
+    #
+    &debug(2, "pre I/O loop");
+    while (1) {
+
+	my $fh;			# selected file handle
+	my $rv;			# recv() or sysread() return value
+	my $wv;			# send() or syswrite() return value
+	my $data;		# data read from STDIN or client
+	my $data_len;		# length of data read
+	my $wr_select;		# select() call object for writing
+
+	# process each readable descriptor
+	#
+	&debug(3, "pre read select loop");
+	foreach $fh ($rd_select->can_read(undef)) {
+
+	    # read STDIN if needed
+	    #
+	    if ($fh eq *STDIN) {
+
+		# determine how much data is on STDIN
+		#
+		$data_len = pack("L", 0);
+		if (!ioctl(STDIN, FIONREAD(), $data_len)) {
+		    &error(10, "cannot FIONREAD STDIN");
+		}
+		$data_len = unpack("L", $data_len);
+
+		# on STDIN EOF (or error), exit cleanly
+		#
+		if (!defined($data_len) || $data_len <= 0) {
+		    &debug(1, "EOF on STDIN, exiting normally");
+		    $client->close();
+		    exit(0);
+		}
+
+		# read only as much STDIN data as we saw was available
+		#
+		$rv = sysread(STDIN, $data, $data_len);
+		if (!defined($rv)) {
+		    &error(11, "read error on STDIN: $!");
+		}
+		if ($rv != $data_len) {
+		    &error(11, "short read error on STDIN");
+		}
+		&debug(3, "read $data_len octets from STDIN");
+
+		# add STDIN data to client buffer
+		#
+		$client_buf .= $data;
+		$client_len += $data_len;
+
+	    # read the socket if neeeded
+	    #
+	    } else {
+
+		# read the socket data
+		#
+		$data = '';
+		$rv = $fh->recv($data, POSIX::BUFSIZ, 0);
+		$data_len = length $data if defined $rv;
+
+		# real with read error or EOF
+		#
+		if (!defined($rv) || $data_len <= 0) {
+
+		    # stop processing client
+		    #
+		    &debug(1, "EOF on client");
+		    $client->close();
+		    return;
+		}
+		&debug(3, "read $data_len octets from client");
+
+		# add client data to STDOUT buffer
+		#
+		$stdout_buf .= $data;
+		$stdout_len += $data_len;
+	    }
+	}
+	&debug(3, "post read select loop");
+
+	# determine what we will write select on
+	#
+	$wr_select = IO::Select->new();
+	if ($client_len > 0) {
+	    $wr_select->add($client);
+	}
+	if ($stdout_len > 0) {
+	    $wr_select->add(*STDOUT);
+	}
+	if ($wr_select->count() <= 0) {
+	    &error(12, "nothing to write, so why did read select return?");
+	}
+
+	# process each writable descriptor
+	#
+	&debug(3, "pre write select loop");
+	foreach $fh ($wr_select->can_write(0)) {
+
+	    # write STDOUT if needed
+	    #
+	    if ($fh eq *STDOUT) {
+
+		# write as much data to STDOUT as we can
+		#
+		$wv = syswrite(STDOUT, $stdout_buf, $data_len);
+
+		# do nothing if we could not write
+		#
+		if (!defined $wv) {
+		    next;
+		}
+
+		# remove written data from the buffer
+		#
+		if ($wv == $stdout_len || $! == POSIX::EWOULDBLOCK) {
+		    substr($stdout_buf, 0, $wv) = '';
+		    $stdout_len -= $wv;
+
+		# error in wring data, stop processing stdout
+		#
+		} else {
+		    &error(13, "write to STDOUT failed");
+		}
+		&debug(3, "wrote $wv octets to STDOUt");
+
+	    # write client if needed
+	    #
+	    } else {
+
+		# send as much data to the client as we can
+		#
+		$wv = $client->send($client_buf, 0);
+
+		# do nothing if we could not write
+		#
+		if (!defined $wv) {
+		    next;
+		}
+
+		# remove written data from the buffer
+		#
+		if ($wv == $client_len || $! == POSIX::EWOULDBLOCK) {
+		    substr($client_buf, 0, $wv) = '';
+		    $client_len -= $wv;
+
+		# error in wring data, stop processing client
+		#
+		} else {
+		    &debug(1, "write to client failed");
+		    $client->close();
+		    return;
+		}
+		&debug(3, "wrote $wv octets to client");
+	    }
+	}
+    }
+    &debug(2, "post I/O loop");
+
+    # client has been processed
+    #
+    return;
+}
+
+
+# nonblock - put descriptor into non-blocking mode
+#
+# given:
+#	$io		socket or handle
+#
+sub non_block($)
+{
+    my $handle = shift;		# get arg
+    my $flags;			# fcntl flags
+
+    # set posix non-blocking I/O
+    #
+    $flags = fcntl($handle, F_GETFL, 0) or &error(20, "cannot get flags");
+    $flags = fcntl($handle, F_SETFL, $flags | O_NONBLOCK) or 
+        &error(21, "cannot set non-blocking flags");
+
+    # flush on writes
+    #
+    $handle->autoflush(1);
+    return;
 }
