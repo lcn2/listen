@@ -2,8 +2,8 @@
 #
 # listen - listen on a TCP port, accept connection and do simple I/O
 #
-# @(#) $Revision: 1.4 $
-# @(#) $Id: listen,v 1.4 2000/05/28 20:41:10 chongo Exp chongo $
+# @(#) $Revision: 1.5 $
+# @(#) $Id: listen,v 1.5 2000/05/28 20:46:27 chongo Exp chongo $
 # @(#) $Source: /usr/local/src/cmd/listen/RCS/listen,v $
 #
 # Copyright (c) 2000 by Landon Curt Noll.  All Rights Reserved.
@@ -48,7 +48,7 @@ $^W = $perl_warn;
 
 # my vars
 #
-my $version = '@(#) $Revision: 1.4 $';		# program version
+my $version = '@(#) $Revision: 1.5 $';		# program version
 
 # usage and help
 #
@@ -325,16 +325,12 @@ sub process_client(*)
     my $stdout_len;		# STDOUT output buffer length
     my $client_buf;		# client output buffer
     my $client_len;		# client output buffer length
+    my $stuck_write;		# 1 ==> a write had a non-fatal error
+    my $stuck_read;		# 1 ==> a read had a non-fatal error
 
     # set non-blocking I/O on client socket
     #
     &non_block($client);
-
-    # build up the read select masks
-    #
-    $rd_select = IO::Select->new();
-    $rd_select->add($client);
-    $rd_select->add(*STDIN);
 
     # clear buffers
     #
@@ -346,6 +342,8 @@ sub process_client(*)
     # process until one of the select handles has an error or EOF
     #
     &debug(2, "pre I/O loop");
+    $stuck_read = 0;
+    $stuck_write = 0;
     while (1) {
 
 	my $fh;			# selected file handle
@@ -354,152 +352,309 @@ sub process_client(*)
 	my $data;		# data read from STDIN or client
 	my $data_len;		# length of data read
 	my $wr_select;		# select() call object for writing
+	my $rd_timeout;		# timeout for recv() or sysread() select
+	my $wr_timeout;		# timeout for send() or syswrite() select
 
-	# process each readable descriptor
+	# determine what we will read select on
 	#
-	&debug(3, "pre read select loop");
-	foreach $fh ($rd_select->can_read(undef)) {
-
-	    # read STDIN if needed
-	    #
-	    if ($fh eq *STDIN) {
-
-		# determine how much data is on STDIN
-		#
-		$data_len = pack("L", 0);
-		if (!ioctl(STDIN, FIONREAD(), $data_len)) {
-		    &error(9, "cannot FIONREAD STDIN");
-		}
-		$data_len = unpack("L", $data_len);
-
-		# on STDIN EOF (or error), exit cleanly
-		#
-		if (!defined($data_len) || $data_len <= 0) {
-		    &debug(1, "EOF on STDIN, exiting normally");
-		    $client->close();
-		    exit(0);
-		}
-
-		# read only as much STDIN data as we saw was available
-		#
-		$rv = sysread(STDIN, $data, $data_len);
-		if (!defined($rv)) {
-		    &error(10, "read error on STDIN: $!");
-		}
-		if ($rv != $data_len) {
-		    &error(11, "short read error on STDIN");
-		}
-		&debug(3, "read $data_len octets from STDIN");
-
-		# add STDIN data to client buffer
-		#
-		$client_buf .= $data;
-		$client_len += $data_len;
-
-	    # read the socket if needed
-	    #
-	    } else {
-
-		# read the socket data
-		#
-		$data = '';
-		$rv = $fh->recv($data, POSIX::BUFSIZ, 0);
-		$data_len = length $data if defined $rv;
-
-		# real with read error or EOF
-		#
-		if (!defined($rv) || $data_len <= 0) {
-
-		    # stop processing client
-		    #
-		    &debug(1, "EOF on client");
-		    $client->close();
-		    return;
-		}
-		&debug(3, "read $data_len octets from client");
-
-		# add client data to STDOUT buffer
-		#
-		$stdout_buf .= $data;
-		$stdout_len += $data_len;
-	    }
+	# We will wait on read select forever ONLY if both buffers are empty.
+	# If either buffer is non-empty and non-full, then we
+	# will do an immediate (non-waiting) read select.  If both
+	# buffers are full, we will not read select at all.
+	#
+	$stuck_read = 0;
+	$rd_select = IO::Select->new();
+	$rd_timeout = undef;
+	if ($client_len < POSIX::BUFSIZ) {
+	    $rd_select->add(*STDIN);
+	    $rd_timeout = 0.0 if $client_len > 0;
 	}
-	&debug(3, "post read select loop");
+	if ($stdout_len < POSIX::BUFSIZ) {
+	    $rd_select->add($client);
+	    $rd_timeout = 0.0 if $stdout_len > 0;
+	}
+
+	# We do not want to do an immediate (non-waiting) read select
+	# if a previous write was "stuck" due to some non-fatal error
+	# such as EAGAIN or EWOULDBLOCK.
+	#
+	if ($stuck_write && $rd_timeout <= 0.0) {
+	    $rd_timeout = 1.0;
+	}
+
+	# note what the read timeout will be
+	#
+	if (defined $rd_timeout) {
+	    &debug(2, "read select $rd_timeout secs");
+	} else {
+	    &debug(2, "read select forever");
+	}
+
+	# case: both buffers are full
+	#
+	if ($rd_select->count() <= 0) {
+	    &debug(2, "both STDIN and client buffers are full");
+	    if ($stuck_write) {
+		&debug(2, "forced read pause for a second");
+		$rd_select->can_read(1.0);
+	    }
+
+	# case: some buffer has room for reading
+	#
+	# process each readable descriptor, if we have any
+	#
+	} else {
+	    &debug(3, "pre read select loop");
+	    foreach $fh ($rd_select->can_read($rd_timeout)) {
+
+		# read STDIN if needed
+		#
+		if ($fh eq *STDIN) {
+
+		    # determine how much data is on STDIN
+		    #
+		    $data_len = pack("L", 0);
+		    if (!ioctl(STDIN, FIONREAD(), $data_len)) {
+			&error(9, "cannot FIONREAD STDIN: $!");
+		    }
+		    $data_len = unpack("L", $data_len);
+		    &debug(4, "FIONREAD on STDIN: $data_len");
+
+		    # on STDIN EOF (or error), exit cleanly
+		    #
+		    if (!defined($data_len) || $data_len <= 0) {
+			&debug(1, "EOF on STDIN, exiting normally");
+			$client->close();
+			exit(0);
+		    }
+
+		    # read what we thing is available on STDIN directly
+		    # into the client buffer
+		    #
+		    $rv = sysread(STDIN, $client_buf, $data_len, $client_len);
+		    if (!defined($rv) || $rv < 0) {
+
+			# case: STDIN read would have blocked
+			#
+			if ($! == POSIX::EWOULDBLOCK) {
+			    &debug(3, "STDIN read would have blocked");
+			    $stuck_read = 1;
+
+			# case: STDIN read should be tried again
+			#
+			} elsif ($! == POSIX::EAGAIN) {
+			    &debug(3, "STDIN read try again later");
+			    $stuck_read = 1;
+
+			# case: a serious STDIN recv error
+			#
+			} else {
+			    # case: client read error
+			    &error(10, "STDIN read error: $!");
+			}
+
+		    } elsif ($rv == 0) {
+			&debug(1, "EOF on STDIN, exiting normally");
+			$client->close();
+			exit(0);
+		    }
+		    &debug(3, "read $rv octets from STDIN");
+
+		    # note new length of buffer
+		    #
+		    $client_len = length $client_buf;
+
+		# read the socket if needed
+		#
+		} else {
+
+		    # read the socket data
+		    #
+		    $data = '';
+		    $rv = $fh->recv($data, POSIX::BUFSIZ, 0);
+
+		    # case: recv did not return an error
+		    #
+		    if (defined($rv)) {
+
+			# determine how much was read
+			#
+			$data_len = length $data;
+
+			# case EOF: stop processing client
+			#
+			if ($data_len <= 0) {
+			    &debug(1, "EOF on client");
+			    $client->close();
+			    return;
+
+			# case: read some data
+			#
+			} else {
+
+			    # add client data to STDOUT buffer for later writing
+			    #
+			    &debug(3, "read $data_len octets from client");
+			    $stdout_buf .= $data;
+			    $stdout_len += $data_len;
+			}
+
+		    # case: recv error
+		    #
+		    } else {
+
+			# case: client recv would have blocked
+			#
+			if ($! == POSIX::EWOULDBLOCK) {
+			    &debug(3, "client recv would have blocked");
+			    $stuck_read = 1;
+
+			# case: client recv should be tried again
+			#
+			} elsif ($! == POSIX::EAGAIN) {
+			    &debug(3, "client recv try again later");
+			    $stuck_read = 1;
+
+			# case: a serious client recv error
+			#
+			} else {
+			    # case: client read error
+			    &error(10, "client recv error: $!");
+			}
+		    }
+
+		}
+	    }
+	    &debug(3, "post read select loop");
+	}
 
 	# determine what we will write select on
 	#
+	# If both buffers are full, then we will write select forever.
+	# If any buffer is non-empty and non-full then we will write select
+	# for up to 1 second.  If both buffers are empty, then we will
+	# not write select at all.
+	#
+	$stuck_write = 0;
 	$wr_select = IO::Select->new();
+	$wr_timeout = undef;
 	if ($client_len > 0) {
 	    $wr_select->add($client);
+	    $wr_timeout = 1.0;
 	}
 	if ($stdout_len > 0) {
 	    $wr_select->add(*STDOUT);
-	}
-	if ($wr_select->count() <= 0) {
-	    &error(12, "nothing to write, so why did read select return?");
+	    $wr_timeout = 1.0;
 	}
 
-	# process each writable descriptor
+	# note what the write timeout will be
 	#
-	&debug(3, "pre write select loop");
-	foreach $fh ($wr_select->can_write(0)) {
+	if (defined $wr_timeout) {
+	    &debug(2, "write select $wr_timeout secs");
+	} else {
+	    &debug(2, "write select forever");
+	}
 
-	    # write STDOUT if needed
-	    #
-	    if ($fh eq *STDOUT) {
-
-		# write as much data to STDOUT as we can
-		#
-		$wv = syswrite(STDOUT, $stdout_buf, $data_len);
-
-		# do nothing if we could not write
-		#
-		if (!defined $wv) {
-		    next;
-		}
-
-		# remove written data from the buffer
-		#
-		if ($wv == $stdout_len || $! == POSIX::EWOULDBLOCK) {
-		    substr($stdout_buf, 0, $wv) = '';
-		    $stdout_len -= $wv;
-
-		# error in wring data, stop processing stdout
-		#
-		} else {
-		    &error(13, "write to STDOUT failed");
-		}
-		&debug(3, "wrote $wv octets to STDOUt");
-
-	    # write client if needed
-	    #
-	    } else {
-
-		# send as much data to the client as we can
-		#
-		$wv = $client->send($client_buf, 0);
-
-		# do nothing if we could not write
-		#
-		if (!defined $wv) {
-		    next;
-		}
-
-		# remove written data from the buffer
-		#
-		if ($wv == $client_len || $! == POSIX::EWOULDBLOCK) {
-		    substr($client_buf, 0, $wv) = '';
-		    $client_len -= $wv;
-
-		# error in wring data, stop processing client
-		#
-		} else {
-		    &debug(1, "write to client failed");
-		    $client->close();
-		    return;
-		}
-		&debug(3, "wrote $wv octets to client");
+	# case: both buffers are empty
+	#
+	if ($wr_select->count() <= 0) {
+	    &debug(2, "both STDIN and client buffers are empty");
+	    if ($stuck_read) {
+		&debug(2, "forced write pause for a second");
+		$rd_select->can_write(1.0);
 	    }
+
+	# case: some buffer has data to write
+	#
+	# process each writable descriptor, if any
+	#
+	} else {
+	    &debug(3, "pre write select loop");
+	    foreach $fh ($wr_select->can_write($wr_timeout)) {
+
+		# write STDOUT if needed
+		#
+		if ($fh eq *STDOUT) {
+
+		    # write as much data to STDOUT as we can
+		    #
+		    $wv = syswrite(STDOUT, $stdout_buf, $stdout_len);
+
+		    # remove written data from the buffer
+		    #
+		    if (defined $wv && $wv > 0) {
+			substr($stdout_buf, 0, $wv) = '';
+			$stdout_len -= $wv;
+			&debug(3, "wrote $wv octets to STDOUT");
+
+		    # case: STDIN write would have blocked
+		    #
+		    } elsif ($! == POSIX::EWOULDBLOCK) {
+			&debug(3, "STDIN write would have blocked");
+			$stuck_write = 1;
+
+		    # case: STDIN write should be tried again
+		    #
+		    } elsif ($! == POSIX::EAGAIN) {
+			&debug(3, "STDIN write try again later");
+			$stuck_write = 1;
+
+		    # EOF on write, time to close down
+		    #
+		    } elsif ($wv == 0) {
+			&debug(1, "stdout EOF, exiting normally");
+			$client->close();
+			exit(0);
+
+		    # error in wring data, stop processing stdout
+		    #
+		    } else {
+			&error(13, "write to STDOUT failed: $!");
+		    }
+
+		# write client if needed
+		#
+		} else {
+
+		    # send as much data to the client as we can
+		    #
+		    $wv = $client->send($client_buf, 0);
+
+		    # remove written data from the buffer
+		    #
+		    if (defined $wv && $wv > 0) {
+			substr($client_buf, 0, $wv) = '';
+			$client_len -= $wv;
+			&debug(3, "wrote $wv octets to client");
+
+		    # case: client write would have blocked
+		    #
+		    } elsif ($! == POSIX::EWOULDBLOCK) {
+			&debug(3, "client write would have blocked");
+			$stuck_write = 1;
+
+		    # case: client write should be tried again
+		    #
+		    } elsif ($! == POSIX::EAGAIN) {
+			&debug(3, "client write try again later");
+
+		    # EOF on write, time to close down
+		    #
+		    } elsif ($wv == 0) {
+			&debug(1, "write to client EOF, closing client");
+			$client->close();
+			return;
+
+		    # error in wring data, stop processing client
+		    #
+		    } else {
+			&debug(1, "write to client failed: $!, closing client");
+			$client->close();
+			return;
+		    }
+		}
+	    }
+	    &debug(3, "post write select loop");
 	}
     }
     &debug(2, "post I/O loop");
