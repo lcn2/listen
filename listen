@@ -2,8 +2,8 @@
 #
 # listen - listen on a TCP port, accept connection and do simple I/O
 #
-# @(#) $Revision: 1.3 $
-# @(#) $Id: listen,v 1.3 2000/05/07 13:27:08 chongo Exp chongo $
+# @(#) $Revision: 1.4 $
+# @(#) $Id: listen,v 1.4 2000/05/28 20:41:10 chongo Exp chongo $
 # @(#) $Source: /usr/local/src/cmd/listen/RCS/listen,v $
 #
 # Copyright (c) 2000 by Landon Curt Noll.  All Rights Reserved.
@@ -48,7 +48,7 @@ $^W = $perl_warn;
 
 # my vars
 #
-my $version = '@(#) $Revision: 1.3 $';		# program version
+my $version = '@(#) $Revision: 1.4 $';		# program version
 
 # usage and help
 #
@@ -112,6 +112,10 @@ MAIN: {
 	#
 	&debug(1, "listening for a connection");
 	($client, $client_addr) = $server->accept();
+	if (! defined $client || ! defined $client_addr) {
+	    &warn("unable to accept connection: $!");
+	    next;
+	}
 
 	# determine information about the new client
 	#
@@ -166,6 +170,27 @@ sub error($$)
     # issue an error message
     #
     exit($exitval);
+}
+
+
+# warn - report an problem and continue
+#
+# given:
+#       $msg		the message to print
+#
+sub warn($$)
+{
+    my ($msg) = @_;    # get args
+
+    # parse args
+    #
+    if (!defined $msg) {
+	$msg = "<<< no message supplied >>>";
+    }
+
+    # issue the error message
+    #
+    print STDERR "$0: Warning: $msg\n";
 }
 
 
