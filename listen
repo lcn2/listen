@@ -1,0 +1,262 @@
+#!/usr/bin/perl -wT
+#
+# listen - listen on a TCP port, accept connection and do simple I/O
+#
+# @(#) $Revision$
+# @(#) $Id$
+# @(#) $Source$
+#
+# Copyright (c) 2000 by Landon Curt Noll.  All Rights Reserved.
+#
+# Permission to use, copy, modify, and distribute this software and
+# its documentation for any purpose and without fee is hereby granted,
+# provided that the above copyright, this permission notice and text
+# this comment, and the disclaimer below appear in all of the following:
+#
+#       supporting documentation
+#       source copies
+#       source works derived from this source
+#       binaries derived from this source or from derived source
+#
+# LANDON CURT NOLL DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS SOFTWARE,
+# INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO
+# EVENT SHALL LANDON CURT NOLL BE LIABLE FOR ANY SPECIAL, INDIRECT OR
+# CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF
+# USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+# OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+# PERFORMANCE OF THIS SOFTWARE.
+#
+# chongo <was here> /\oo/\
+#
+# Share and enjoy!
+
+# requirements
+#
+use strict;
+use vars qw($opt_v $opt_d);
+use Getopt::Long;
+use Socket;
+
+# my vars
+#
+my $version = '@(#) $Revision: 1.1 $';		# program version
+
+# usage and help
+#
+my $usage = "listen [-v] [-d] [interface:]port";
+my $help = qq{Usage:
+
+  $0 $usage
+
+	[interface:]port	the local interface and port to listen on
+
+	-d	daemon mode, re-listen after connection is dropped
+	-v	verbose / debug mode
+};
+my %optctl = (
+    "v" => \$opt_v,	"d" => \$opt_d
+);
+
+
+# setup
+#
+MAIN: {
+    my $int_arg;		# [interface:]port arg
+    my $server;			# socket handle to listen on for clients
+    my $client_port;		# client's port on their host
+    my $client_addr;		# client remote socket address
+    my $client_host;		# client hostname or IP address as .-ed string
+    my $client_ip;		# client IP address
+    my $client_addrstr;		# client IP address as .-ed string
+
+    # setup
+    #
+    select(STDOUT);
+    $| = 1;
+
+    # set the defaults
+    #
+    $opt_v = 0;
+
+    # parse args
+    #
+    if (!GetOptions(%optctl)) {
+	&error(1, "usage: $0 $usage");
+    }
+    if ($#ARGV != 0) {
+	&error(1, "usage: $0 $usage");
+    }
+    $int_arg = $ARGV[0];
+
+    # setup the server port
+    #
+    $server = &listen_setup($int_arg);
+
+    # listen for a connection
+    #
+    do {
+
+	# accept the new connection
+	#
+	&debug(1, "listening for a connection");
+	$client_addr = accept(CLIENT, $server);
+	&debug(1, "accepted a new connection");
+
+	# determine informatin about the new client
+	#
+&debug(2, "here 0");
+	($client_port, $client_ip) = sockaddr_in($client_addr);
+&debug(2, "here 1");
+	$client_addrstr = inet_ntoa($client_ip);
+&debug(2, "here 2");
+	if (!($client_host = gethostbyaddr($client_addr, AF_INET))) {
+&debug(2, "here 3");
+	    $client_host = $client_addrstr;
+&debug(2, "here 4");
+	}
+	&debug(1, "accepted connection from $client_host($client_port)");
+
+	exit(0);	# XXX
+    }
+}
+
+
+# error - report an error and exit
+#
+# given:
+#       $exitval	exit code value
+#       $msg		the message to print
+#
+sub error($$)
+{
+    my ($exitval, $msg) = @_;    # get args
+
+    # parse args
+    #
+    if (!defined $exitval) {
+	$exitval = 254;
+    }
+    if (!defined $msg) {
+	$msg = "<<< no message supplied >>>";
+    }
+    if ($exitval =~ /\D/) {
+	$msg .= "<<< non-numeric exit code: $exitval >>>";
+	$exitval = 253;
+    }
+
+    # issue the error message
+    #
+    print STDERR "$0: $msg\n";
+
+    # issue an error message
+    #
+    exit($exitval);
+}
+
+
+# debug - print a debug message is debug level is high enough
+#
+# given:
+#       $min_lvl	minimum debug level required to print
+#       $msg		message to print
+#
+sub debug($$)
+{
+    my ($min_lvl, $msg) = @_;    # get args
+
+    # firewall
+    #
+    if (!defined $min_lvl) {
+    	&error(2, "debug called without a minimum debug level");
+    }
+    if ($min_lvl =~ /\D/) {
+    	&error(3, "debug called with non-numeric debug level: $min_lvl");
+    }
+    if ($opt_v < $min_lvl) {
+	return;
+    }
+    if (!defined $msg) {
+    	&error(4, "debug called without a message");
+    }
+
+    # issue the error message
+    #
+    print STDERR "DEBUG: $msg\n";
+}
+
+
+# listen_setup - setup a socket to listen on
+#
+# given:
+#	$int_arg;		# [interface:]port arg
+#
+# returns:
+#	file handle of socket bound to the [interface:]port
+#
+sub listen_setup($)
+{
+    my $int_arg = $_[0];	# get arg
+    my $int_host;		# interface host name
+    my $int_addr;		# interface IP address
+    my $int_addrstr;		# interface IP address as a .-ed string
+    my $sock_addr;		# listen socket addr
+    my $port;			# TCP port to listen on
+    local *FH;			# listening file handle
+
+    # determine the interface address or use INADDR_ANY
+    #
+    if ($int_arg =~ /:/) {
+    	
+	# obtain the interface name and split out the port
+	#
+	$int_arg =~ /^(.*):([^:]*)$/;
+	$int_host = $1;
+	$int_arg = $2;
+
+	# determine the IP address of the interface
+	#
+	$int_addr = gethostbyname($int_host) or
+	    &error(5, "interface name: $int_host is unknown");
+	$int_addrstr = inet_ntoa($int_addr);
+	&debug(1, "listening only on interface: $int_host ($int_addrstr)");
+
+    } else {
+
+	# will listen on any interface
+	#
+	$int_host = "";
+	$int_addr = INADDR_ANY;
+	&debug(1, "listening on any interface");
+    }
+
+    # determine the port number to listen on
+    #
+    if ($int_arg !~ /^[0-9]+$/) {
+	(undef, undef, $port, undef) = getservbyname($int_arg, "tcp");
+	if (! defined($port)) {
+	    &error(6, "port name: $port is unknown");
+	}
+	&debug(1, "will listen on port: $int_arg ($port)");
+    } else {
+	$port = $int_arg;
+	&debug(1, "will listen on port: $port");
+    }
+
+    # form a socket to listen on
+    #
+    socket(FH, PF_INET, SOCK_STREAM, getprotobyname('tcp'));
+    setsockopt(FH, SOL_SOCKET, SO_REUSEADDR, 1);
+
+    # bind the socket to the [interface:]port
+    #
+    $sock_addr = sockaddr_in($port, $int_addr);
+    bind(FH, $sock_addr) or &error(7, "cannot bind to $int_host:$port: $!");
+
+    # establish a listening queue for new clients
+    #
+    listen(FH, SOMAXCONN) or &error(8, "cannot listen to $int_arg: $!");
+
+    # return the handle
+    #
+    return *FH;
+}
