@@ -2,8 +2,8 @@
 #
 # listen - listen on a TCP port, accept connection and do simple I/O
 #
-# @(#) $Revision: 1.7 $
-# @(#) $Id: listen,v 1.7 2004/05/21 15:23:19 chongo Exp chongo $
+# @(#) $Revision: 1.8 $
+# @(#) $Id: listen,v 1.8 2010/04/27 23:13:29 chongo Exp chongo $
 # @(#) $Source: /usr/local/src/cmd/listen/RCS/listen,v $
 #
 # Copyright (c) 2000-2010 by Landon Curt Noll.  All Rights Reserved.
@@ -38,14 +38,13 @@ use vars qw($opt_v $opt_d);
 use POSIX;
 use Getopt::Long;
 use Socket;
-use IO::File;
 use IO::Select;
 use IO::Socket;
 use Fcntl;
 
 # my vars
 #
-my $version = '@(#) $Revision: 1.7 $';		# program version
+my $version = '@(#) $Revision: 1.8 $';		# program version
 
 # usage and help
 #
