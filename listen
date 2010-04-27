@@ -2,11 +2,11 @@
 #
 # listen - listen on a TCP port, accept connection and do simple I/O
 #
-# @(#) $Revision: 1.6 $
-# @(#) $Id: listen,v 1.6 2002/03/08 10:51:49 chongo Exp chongo $
+# @(#) $Revision: 1.7 $
+# @(#) $Id: listen,v 1.7 2004/05/21 15:23:19 chongo Exp chongo $
 # @(#) $Source: /usr/local/src/cmd/listen/RCS/listen,v $
 #
-# Copyright (c) 2000 by Landon Curt Noll.  All Rights Reserved.
+# Copyright (c) 2000-2010 by Landon Curt Noll.  All Rights Reserved.
 #
 # Permission to use, copy, modify, and distribute this software and
 # its documentation for any purpose and without fee is hereby granted,
@@ -38,18 +38,14 @@ use vars qw($opt_v $opt_d);
 use POSIX;
 use Getopt::Long;
 use Socket;
+use IO::File;
 use IO::Select;
 use IO::Socket;
 use Fcntl;
-use Tie::RefHash;
-my $perl_warn = $^W;
-$^W = 0;
-require 'sys/ioctl.ph';
-$^W = $perl_warn;
 
 # my vars
 #
-my $version = '@(#) $Revision: 1.6 $';		# program version
+my $version = '@(#) $Revision: 1.7 $';		# program version
 
 # usage and help
 #
@@ -97,9 +93,11 @@ MAIN: {
 
     # setup
     #
-    select(STDOUT);
-    $| = 1;
-    &non_block(*STDOUT);
+    STDIN->blocking(0);
+    STDOUT->blocking(0);
+    STDOUT->autoflush(1);
+    STDERR->blocking(0);
+    STDERR->autoflush(1);
 
     # setup the server port
     #
@@ -248,7 +246,7 @@ sub listen_setup($)
     # determine the interface address or use INADDR_ANY
     #
     if ($int_arg =~ /:/) {
-    	
+
 	# obtain the interface name and split out the port
 	#
 	$int_arg =~ /^(.*):([^:]*)$/;
@@ -412,27 +410,10 @@ sub process_client(*)
 		#
 		if ($fh eq *STDIN) {
 
-		    # determine how much data is on STDIN
-		    #
-		    $data_len = pack("L", 0);
-		    if (!ioctl(STDIN, FIONREAD(), $data_len)) {
-			&error(9, "cannot FIONREAD STDIN: $!");
-		    }
-		    $data_len = unpack("L", $data_len);
-		    &debug(4, "FIONREAD on STDIN: $data_len");
-
-		    # on STDIN EOF (or error), exit cleanly
-		    #
-		    if (!defined($data_len) || $data_len <= 0) {
-			&debug(1, "EOF on STDIN, exiting normally");
-			$client->close();
-			exit(0);
-		    }
-
 		    # read what we thing is available on STDIN directly
 		    # into the client buffer
 		    #
-		    $rv = sysread(STDIN, $client_buf, $data_len, $client_len);
+		    $rv = sysread(STDIN, $client_buf, POSIX::BUFSIZ);
 		    if (!defined($rv) || $rv < 0) {
 
 			# case: STDIN read would have blocked
@@ -523,7 +504,6 @@ sub process_client(*)
 			    &error(10, "client recv error: $!");
 			}
 		    }
-
 		}
 	    }
 	    &debug(3, "post read select loop");
@@ -679,7 +659,7 @@ sub non_block($)
     # set POSIX non-blocking I/O
     #
     $flags = fcntl($handle, F_GETFL, 0) or &error(14, "cannot get flags");
-    $flags = fcntl($handle, F_SETFL, $flags | O_NONBLOCK) or 
+    $flags = fcntl($handle, F_SETFL, $flags | O_NONBLOCK) or
         &error(15, "cannot set non-blocking flags");
 
     # flush on writes
