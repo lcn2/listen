@@ -2,11 +2,11 @@
 #
 # listen - listen on a TCP port, accept connection and do simple I/O
 #
-# @(#) $Revision: 1.8 $
-# @(#) $Id: listen,v 1.8 2010/04/27 23:13:29 chongo Exp chongo $
-# @(#) $Source: /usr/local/src/cmd/listen/RCS/listen,v $
+# @(#) $Revision: 1.9 $
+# @(#) $Id: listen,v 1.9 2010/04/27 23:31:37 chongo Exp $
+# @(#) $Source: /usr/local/src/bin/listen/RCS/listen,v $
 #
-# Copyright (c) 2000-2010 by Landon Curt Noll.  All Rights Reserved.
+# Copyright (c) 2000-2010,2017 by Landon Curt Noll.  All Rights Reserved.
 #
 # Permission to use, copy, modify, and distribute this software and
 # its documentation for any purpose and without fee is hereby granted,
@@ -44,7 +44,7 @@ use Fcntl;
 
 # my vars
 #
-my $version = '@(#) $Revision: 1.8 $';		# program version
+my $version = '@(#) $Revision: 1.9 $';		# program version
 
 # usage and help
 #
@@ -119,10 +119,10 @@ MAIN: {
 	#
 	($client_port, $client_ip) = sockaddr_in($client_addr);
 	$client_addrstr = inet_ntoa($client_ip);
-	if (!($client_host = gethostbyaddr($client_addr, AF_INET))) {
+	if (!($client_host = gethostbyaddr(inet_aton($client_addrstr), AF_INET))) {
 	    $client_host = $client_addrstr;
 	}
-	&debug(1, "accepted connection from $client_host($client_port)");
+	&debug(1, "accepted connection from $client_addrstr($client_port) == $client_host($client_port)");
 
 	# process I/O from client as needed
 	#
