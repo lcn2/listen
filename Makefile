@@ -3,8 +3,8 @@
 # listen - listen on a TCP port, accept connection and do simple I/O
 #
 # @(#) $Revision: 1.1 $
-# @(#) $Id: Makefile,v 1.1 2000/05/20 12:40:32 chongo Exp $
-# @(#) $Source: /usr/local/src/cmd/ipv4util/RCS/Makefile,v $
+# @(#) $Id: Makefile,v 1.1 2000/05/28 20:34:16 chongo Exp $
+# @(#) $Source: /usr/local/src/bin/listen/RCS/Makefile,v $
 #
 # Copyright (c) 2000 by Landon Curt Noll.  All Rights Reserved.
 #

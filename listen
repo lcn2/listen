@@ -2,8 +2,8 @@
 #
 # listen - listen on a TCP port, accept connection and do simple I/O
 #
-# @(#) $Revision: 1.9 $
-# @(#) $Id: listen,v 1.9 2010/04/27 23:31:37 chongo Exp $
+# @(#) $Revision: 1.10 $
+# @(#) $Id: listen,v 1.10 2017/09/29 01:52:36 chongo Exp $
 # @(#) $Source: /usr/local/src/bin/listen/RCS/listen,v $
 #
 # Copyright (c) 2000-2010,2017 by Landon Curt Noll.  All Rights Reserved.
@@ -44,7 +44,7 @@ use Fcntl;
 
 # my vars
 #
-my $version = '@(#) $Revision: 1.9 $';		# program version
+my $version = '@(#) $Revision: 1.10 $';		# program version
 
 # usage and help
 #
