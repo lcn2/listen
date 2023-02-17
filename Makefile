@@ -1,12 +1,8 @@
-#!/usr/bin/make
+#!/usr/bin/env make
 #
 # listen - listen on a TCP port, accept connection and do simple I/O
 #
-# @(#) $Revision: 1.1 $
-# @(#) $Id: Makefile,v 1.1 2000/05/28 20:34:16 chongo Exp $
-# @(#) $Source: /usr/local/src/bin/listen/RCS/Makefile,v $
-#
-# Copyright (c) 2000 by Landon Curt Noll.  All Rights Reserved.
+# Copyright (c) 2000,2023 by Landon Curt Noll.  All Rights Reserved.
 #
 # Permission to use, copy, modify, and distribute this software and
 # its documentation for any purpose and without fee is hereby granted,
@@ -30,10 +26,10 @@
 #
 # Share and enjoy!
 
-SHELL=/bin/sh
-BINMODE=0555
-DESTDIR=/usr/local/bin
-INSTALL=install
+SHELL= bash
+BINMODE= 0555
+DESTDIR= /usr/local/bin
+INSTALL= install
 
 all: listen
 
