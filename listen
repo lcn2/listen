@@ -1,12 +1,8 @@
-#!/usr/bin/perl -wT
+#!/usr/bin/env perl -w
 #
 # listen - listen on a TCP port, accept connection and do simple I/O
 #
-# @(#) $Revision: 1.10 $
-# @(#) $Id: listen,v 1.10 2017/09/29 01:52:36 chongo Exp $
-# @(#) $Source: /usr/local/src/bin/listen/RCS/listen,v $
-#
-# Copyright (c) 2000-2010,2017 by Landon Curt Noll.  All Rights Reserved.
+# Copyright (c) 2000-2010,2017,2023 by Landon Curt Noll.  All Rights Reserved.
 #
 # Permission to use, copy, modify, and distribute this software and
 # its documentation for any purpose and without fee is hereby granted,
