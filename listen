@@ -1,8 +1,8 @@
-#!/usr/bin/env perl -w
+#!/usr/bin/env perl
 #
 # listen - listen on a TCP port, accept connection and do simple I/O
 #
-# Copyright (c) 2000-2010,2017,2023 by Landon Curt Noll.  All Rights Reserved.
+# Copyright (c) 2000,2002,2004,2010,2017,2023,2025 by Landon Curt Noll.  All Rights Reserved.
 #
 # Permission to use, copy, modify, and distribute this software and
 # its documentation for any purpose and without fee is hereby granted,
@@ -30,32 +30,42 @@
 #
 use strict;
 use bytes;
-use vars qw($opt_v $opt_d);
+use vars qw($opt_h $opt_v $opt_V $opt_d);
 use POSIX;
-use Getopt::Long;
+use Getopt::Long qw(:config no_ignore_case);
+use File::Basename;
 use Socket;
 use IO::Select;
 use IO::Socket;
 use Fcntl;
 
+# version
+#
+my $VERSION = '1.10.1 2025-03-28';		# program version
+
 # my vars
 #
-my $version = '@(#) $Revision: 1.10 $';		# program version
+my $NAME = basename($0);
 
 # usage and help
 #
-my $usage = "listen [-v] [-d] [interface:]port";
-my $help = qq{Usage:
+my $usage = "$NAME [-h] [-v lvl] [-V] [-d] [interface:]port";
+my $help = qq{$usage
 
-  $0 $usage
+    -h              print help and exit
+    -v lvl          verbose / debug level
+    -V              print version and exit
 
-	[interface:]port	the local interface and port to listen on
+    -d  daemon mode, re-listen after connection is dropped
 
-	-d	daemon mode, re-listen after connection is dropped
-	-v	verbose / debug mode
-};
+    [interface:]port    the local interface and port to listen on
+
+$NAME version: $VERSION};
 my %optctl = (
-    "v+" => \$opt_v,	"d" => \$opt_d
+    "h" => \$opt_h,
+    "v=i" => \$opt_v,
+    "V" => \$opt_V,
+    "d" => \$opt_d
 );
 
 
@@ -73,12 +83,22 @@ MAIN: {
 
     # set the defaults
     #
+    $opt_h = 0;
     $opt_v = 0;
+    $opt_V = 0;
 
     # parse args
     #
     if (!GetOptions(%optctl)) {
 	&error(1, "usage: $0 $usage");
+    }
+    if ($opt_h) {
+        print "$help\n";
+        exit(0);
+    }
+    if ($opt_V) {
+        print "$VERSION\n";
+        exit(0);
     }
     if ($#ARGV != 0) {
 	&error(2, "usage: $0 $usage");
