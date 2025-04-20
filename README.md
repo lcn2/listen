@@ -10,23 +10,6 @@ sudo make install
 ```
 
 
-# To use
-
-```sh
-/usr/local/bin/listen [-h] [-v lvl] [-V] [-d] [interface:]port
-
-    -h              print help and exit
-    -v lvl          verbose / debug level
-    -V              print version and exit
-
-    -d  daemon mode, re-listen after connection is dropped
-
-    [interface:]port    the local interface and port to listen on
-
-listen version: 1.10.1 2025-03-28
-```
-
-
 # Example
 
 Listen in TCP port 12345 on 127.0.0.1:
@@ -99,6 +82,23 @@ Accept-Encoding: gzip, deflate
 Connection: keep-alive
 
 ...
+```
+
+
+# To use
+
+```
+/usr/local/bin/listen [-h] [-v lvl] [-V] [-d] [interface:]port
+
+    -h              print help and exit
+    -v lvl          verbose / debug level
+    -V              print version and exit
+
+    -d  daemon mode, re-listen after connection is dropped
+
+    [interface:]port    the local interface and port to listen on
+
+listen version: 1.10.1 2025-03-28
 ```
 
 
